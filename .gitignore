@@ -1,29 +1,31 @@
-# Dependencies
-node_modules/
-.pnp
-.pnp.js
-
-# Testing
-coverage/
-
-# Next.js
-.next/
-out/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Production
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Virtual Environment
+venv/
+env/
+ENV/
 
-# Environment
-.env
-.env.local
-.env*.local
-
-# IDE
+# IDEs
 .vscode/
 .idea/
 *.swp
@@ -34,35 +36,50 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-# Documentation (don't commit)
-*.md
-!README.md
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Node modules
+node_modules/
+.next/
+out/
+
+# Logs
+*.log
+logs/
+
+# Documentation (exclude from commits)
+agents/agentverse_deployments/*.md
+agents/archived_static_agents/
+*.txt
+MIGRATION_TO_CONVERSATIONAL.md
+CONVERSATIONAL_SYSTEM_COMPLETE.md
+COMPLETE_AGENT_SYSTEM.md
+AGENTVERSE_STATUS.txt
+HOW_TO_TEST_AGENTS.txt
+
+# Old agent files (archived)
+agents/agentverse_deployments/FREELANCER_AGENT.py
+agents/agentverse_deployments/CLIENT_AGENT.py
+agents/agentverse_deployments/VALIDATOR_AGENT.py
+agents/agentverse_deployments/COORDINATOR_AGENT.py
+agents/agentverse_deployments/MARKET_ANALYZER_AGENT.py
+agents/agentverse_deployments/REPUTATION_ORACLE_AGENT.py
+agents/agentverse_deployments/*_agentverse.py
 
 # Test files
-*test*.md
-*TEST*.md
-*debug*.md
-*DEBUG*.md
-CHECK_*.md
-SIMPLE_*.md
-QUICK_*.md
-COMPLETE_*.md
-NAVIGATION_*.md
-PROPOSAL_*.md
-
-# Hardhat
-cache/
-artifacts/
-
-# Python
-__pycache__/
-*.py[cod]
-*.pyc
-.Python
-venv/
-ENV/
+test_*.py
+*_test.py
+TEST_*.html
 
 # Temporary files
 *.tmp
-*.temp
 .cache/
+
+# Agent executors (old system)
+agents/executors/
+
+# Batch files
+*.bat
