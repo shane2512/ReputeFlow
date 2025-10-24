@@ -2,7 +2,9 @@ from uagents import Agent, Context
 from shared_models import (
     StoreFreelancerSkills, SkillsStored,
     FreelancerSkillsRequest, FreelancerSkillsResponse,
-    ListFreelancersRequest, ListFreelancersResponse
+    ListFreelancersRequest, ListFreelancersResponse,
+    StoreProposal, ProposalStored,
+    GetProposalsRequest, ProposalsResponse, ProposalData
 )
 import json
 import os
@@ -101,6 +103,74 @@ async def list_request_handler(ctx: Context, sender: str, msg: ListFreelancersRe
     
     await ctx.send(sender, response)
     ctx.logger.info(f"✅ Sent {len(freelancers)} freelancer addresses to {sender}")
+
+@agent.on_message(model=StoreProposal)
+async def store_proposal_handler(ctx: Context, sender: str, msg: StoreProposal):
+    """Store a job proposal"""
+    ctx.logger.info(f"💾 Storing proposal for Job {msg.job_id} from {msg.freelancer_address}")
+    
+    # Store proposals by job_id
+    proposals_key = f"proposals_job_{msg.job_id}"
+    proposals_json = ctx.storage.get(proposals_key)
+    
+    if proposals_json:
+        proposals = json.loads(proposals_json)
+    else:
+        proposals = []
+    
+    # Add new proposal
+    proposal_data = {
+        "freelancer_address": msg.freelancer_address,
+        "proposal_text": msg.proposal_text,
+        "estimated_hours": msg.estimated_hours,
+        "timestamp": msg.timestamp
+    }
+    
+    proposals.append(proposal_data)
+    ctx.storage.set(proposals_key, json.dumps(proposals))
+    
+    ctx.logger.info(f"✅ Proposal stored. Total proposals for Job {msg.job_id}: {len(proposals)}")
+    
+    # Send confirmation
+    response = ProposalStored(
+        job_id=msg.job_id,
+        freelancer_address=msg.freelancer_address,
+        success=True,
+        message=f"Proposal stored successfully. Total proposals: {len(proposals)}"
+    )
+    
+    await ctx.send(sender, response)
+
+@agent.on_message(model=GetProposalsRequest)
+async def get_proposals_handler(ctx: Context, sender: str, msg: GetProposalsRequest):
+    """Get all proposals for a job"""
+    ctx.logger.info(f"📋 Getting proposals for Job {msg.job_id} requested by {sender}")
+    
+    proposals_key = f"proposals_job_{msg.job_id}"
+    proposals_json = ctx.storage.get(proposals_key)
+    
+    if proposals_json:
+        proposals_list = json.loads(proposals_json)
+        proposals = [
+            ProposalData(
+                freelancer_address=p["freelancer_address"],
+                proposal_text=p["proposal_text"],
+                estimated_hours=p["estimated_hours"],
+                timestamp=p["timestamp"]
+            )
+            for p in proposals_list
+        ]
+    else:
+        proposals = []
+    
+    response = ProposalsResponse(
+        job_id=msg.job_id,
+        proposals=proposals,
+        total_count=len(proposals)
+    )
+    
+    await ctx.send(sender, response)
+    ctx.logger.info(f"✅ Sent {len(proposals)} proposals to {sender}")
 
 if __name__ == "__main__":
     agent.run()

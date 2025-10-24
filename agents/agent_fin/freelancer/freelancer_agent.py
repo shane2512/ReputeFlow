@@ -10,12 +10,17 @@ from shared_models import (
     StoreFreelancerSkills, SkillsStored,
     FindJobsRequest, FreelancerSkillsRequest, FreelancerSkillsResponse,
     MatchedJobs, EnhancedJobMatchResult,
-    JobFetchRequest, JobData
+    JobFetchRequest, JobData,
+    GenerateProposalRequest, ProposalGenerated,
+    StoreProposal, ProposalStored
 )
 from datetime import datetime
 from uuid import uuid4
 import os
+import time
+import json
 from dotenv import load_dotenv
+from web3 import Web3
 
 load_dotenv()
 
@@ -28,8 +33,22 @@ agent = Agent(
 
 STORAGE_AGENT_ADDRESS = os.getenv("STORAGE_AGENT_ADDRESS")
 JOB_MATCHER_ADDRESS = os.getenv("JOB_MATCHER_ADDRESS")
-AI_MODEL_ADDRESS = os.getenv("AI_MODEL_ADDRESS")
+AI_MODEL_ADDRESS = os.getenv("AI_MODEL_AGENT_ADDRESS")  # Fixed: was AI_MODEL_ADDRESS
 JOB_FETCHER_ADDRESS = os.getenv("JOB_FETCHER_ADDRESS")
+WEB3_PROVIDER_URL = os.getenv("WEB3_PROVIDER_URL", "https://sepolia.base.org")
+WORK_ESCROW_ADDRESS = os.getenv("WORK_ESCROW")
+FREELANCER_PRIVATE_KEY = os.getenv("FREELANCER_PRIVATE_KEY")
+
+# Initialize Web3
+w3 = Web3(Web3.HTTPProvider(WEB3_PROVIDER_URL))
+
+# Use freelancer's private key if provided, otherwise use agent address
+if FREELANCER_PRIVATE_KEY:
+    freelancer_account = w3.eth.account.from_key(FREELANCER_PRIVATE_KEY)
+    FREELANCER_WALLET = freelancer_account.address
+else:
+    # Use agent's address as the freelancer identifier
+    FREELANCER_WALLET = None  # Will be set to agent.address after agent initialization
 
 # Chat protocol for ASI:One compatibility
 chat_protocol = Protocol(name="FreelancerChatProtocol", spec=chat_protocol_spec)
@@ -43,6 +62,8 @@ async def startup(ctx: Context):
     ctx.logger.info("Available Commands:")
     ctx.logger.info("1. 'register skills: python, solidity, react' - Register your skills")
     ctx.logger.info("2. 'find jobs' - Find matching jobs")
+    ctx.logger.info("3. 'apply job: <job_id>' - Apply for a job")
+    ctx.logger.info(f"Wallet: {FREELANCER_WALLET}")
     ctx.logger.info("=" * 50)
 
 # ========== ASI:One Chat Protocol Handler ==========
@@ -109,13 +130,92 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
         ctx.logger.info(f"🔍 Job search initiated for {sender}")
         response_text = "🔍 Searching for matching jobs...\nI'll send you the results shortly!"
     
+    elif "apply" in text_lower and "job" in text_lower:
+        # Apply for a job
+        # Format: "apply job: 1" or "apply for job 1"
+        try:
+            # Extract job ID
+            if ":" in text:
+                job_id_str = text.split(":", 1)[1].strip()
+            else:
+                # Try to find number in text
+                import re
+                numbers = re.findall(r'\d+', text)
+                job_id_str = numbers[0] if numbers else None
+            
+            if job_id_str:
+                job_id = int(job_id_str)
+                
+                # Store application context
+                ctx.storage.set("applying_job_id", job_id)
+                ctx.storage.set("applying_freelancer", sender)
+                ctx.storage.set("applying_wallet", FREELANCER_WALLET)
+                
+                ctx.logger.info(f"📝 Applying for Job {job_id} from {sender}")
+                
+                # First, get freelancer skills
+                await ctx.send(STORAGE_AGENT_ADDRESS, FreelancerSkillsRequest(
+                    freelancer_address=sender,
+                    requester=str(ctx.agent.address)
+                ))
+                
+                response_text = f"📝 Generating proposal for Job #{job_id}...\nPlease wait while I prepare your application."
+            else:
+                response_text = "❌ Please provide a job ID. Format: 'apply job: 1'"
+        except Exception as e:
+            ctx.logger.error(f"Error parsing apply command: {e}")
+            response_text = "❌ Invalid format. Use: 'apply job: 1'"
+    
+    elif "submit" in text_lower and "deliverable" in text_lower:
+        # Submit deliverable for a job
+        # Format: "submit deliverable: 1 https://ipfs.io/ipfs/Qm... Great work completed!"
+        try:
+            if ":" in text:
+                parts = text.split(":", 1)[1].strip().split(maxsplit=2)
+                if len(parts) >= 2:
+                    job_id = int(parts[0])
+                    deliverable_url = parts[1]
+                    description = parts[2] if len(parts) > 2 else "Deliverable submitted"
+                    
+                    # Store deliverable info
+                    deliverable_data = {
+                        "job_id": job_id,
+                        "freelancer": FREELANCER_WALLET or agent.address,
+                        "url": deliverable_url,
+                        "description": description,
+                        "timestamp": int(time.time()),
+                        "status": "submitted"
+                    }
+                    ctx.storage.set(f"deliverable_{job_id}", json.dumps(deliverable_data))
+                    
+                    ctx.logger.info(f"📦 Deliverable submitted for Job #{job_id}")
+                    ctx.logger.info(f"   URL: {deliverable_url}")
+                    
+                    response_text = f"""✅ Deliverable Submitted!
+
+Job #{job_id}
+📦 Deliverable: {deliverable_url[:50]}...
+📝 Description: {description}
+
+⏳ Waiting for client approval to release payment.
+"""
+                else:
+                    response_text = "❌ Please provide job ID and deliverable URL.\n\nFormat: 'submit deliverable: 1 https://ipfs.io/... Description'"
+            else:
+                response_text = "❌ Invalid format.\n\nUse: 'submit deliverable: <job_id> <url> <description>'"
+        except Exception as e:
+            ctx.logger.error(f"Error submitting deliverable: {e}")
+            response_text = f"❌ Error: {str(e)}\n\nFormat: 'submit deliverable: 1 https://ipfs.io/... Description'"
+    
     elif "help" in text_lower:
         response_text = (
             "👋 Welcome to ReputeFlow Freelancer Agent!\n\n"
             "Available commands:\n"
             "1️⃣ Register skills: 'register skills: python, solidity, react'\n"
             "2️⃣ Find jobs: 'find jobs'\n"
-            "3️⃣ Help: 'help'\n\n"
+            "3️⃣ Apply for job: 'apply job: 1'\n"
+            "4️⃣ Submit deliverable: 'submit deliverable: 1 https://ipfs.io/... Description'\n"
+            "5️⃣ Help: 'help'\n\n"
             "I help you find Web3 freelance opportunities matching your skills!"
         )
     
@@ -178,6 +278,10 @@ async def handle_jobs_received(ctx: Context, sender: str, msg: JobData):
     
     ctx.logger.info(f"✅ Step 2: Forwarding {msg.total_jobs} jobs to Job Matcher")
     
+    # Store jobs for later use (e.g., when applying)
+    ctx.storage.set("latest_jobs", json.dumps(msg.jobs))
+    ctx.logger.info(f"💾 Stored {len(msg.jobs)} jobs in cache")
+    
     # Forward jobs to Job Matcher so it can store them
     await ctx.send(JOB_MATCHER_ADDRESS, msg)
     
@@ -194,15 +298,23 @@ async def handle_jobs_received(ctx: Context, sender: str, msg: JobData):
     ))
 
 @agent.on_message(model=FreelancerSkillsResponse)
-async def handle_skills_and_match(ctx: Context, sender: str, msg: FreelancerSkillsResponse):
-    """Step 4: Received skills, now perform matching"""
+async def handle_skills_response(ctx: Context, sender: str, msg: FreelancerSkillsResponse):
+    """Handle skills response - either for job search or job application"""
     ctx.logger.info(f"📚 Received skills from {sender}: {msg.skills}")
     
+    # Check if this is for job application
+    applying_job_id = ctx.storage.get("applying_job_id")
+    if applying_job_id:
+        ctx.logger.info(f"📝 Skills received for job application (Job {applying_job_id})")
+        await handle_skills_for_application(ctx, sender, msg)
+        return
+    
+    # Otherwise, this is for job search
     if ctx.storage.get("job_search_initiated") != "true":
         ctx.logger.warning("⚠️ Job search not initiated, ignoring skills response")
         return
     
-    ctx.logger.info(f"✅ Step 4: Processing skills for matching")
+    ctx.logger.info(f"✅ Step 4: Processing skills for job matching")
     
     if not msg.found or not msg.skills:
         ctx.logger.warning("❌ No skills found. Please register your profile first!")
@@ -272,6 +384,113 @@ async def handle_enhanced_results(ctx: Context, sender: str, msg: EnhancedJobMat
         ctx.storage.remove("job_search_requester")
         ctx.storage.remove("current_freelancer")
         ctx.storage.remove("current_jobs")
+
+# Helper function for when applying for a job
+async def handle_skills_for_application(ctx: Context, sender: str, msg: FreelancerSkillsResponse):
+    """Handle skills response when applying for a job"""
+    applying_job_id = ctx.storage.get("applying_job_id")
+    
+    if not applying_job_id:
+        ctx.logger.warning("No applying_job_id found")
+        return
+    
+    # This is for job application
+    job_id = int(applying_job_id)
+    freelancer = ctx.storage.get("applying_freelancer")
+    
+    ctx.logger.info(f"📝 Generating proposal for Job {job_id}")
+    
+    if not msg.found or not msg.skills:
+        await ctx.send(freelancer, ChatMessage(
+            timestamp=datetime.utcnow(),
+            msg_id=uuid4(),
+            content=[
+                TextContent(type="text", text="❌ No skills found! Please register your skills first."),
+            ]
+        ))
+        ctx.storage.remove("applying_job_id")
+        ctx.storage.remove("applying_freelancer")
+        return
+    
+    # Get job details from storage
+    jobs_json = ctx.storage.get("latest_jobs")
+    if jobs_json:
+        jobs = json.loads(jobs_json)
+        job_details = next((j for j in jobs if j.get("project_id") == job_id), None)
+        
+        if job_details:
+            # Request AI to generate proposal
+            await ctx.send(AI_MODEL_ADDRESS, GenerateProposalRequest(
+                freelancer_address=FREELANCER_WALLET,
+                job_id=job_id,
+                job_details=job_details,
+                freelancer_skills=msg.skills
+            ))
+            ctx.logger.info(f"✅ Sent proposal generation request to AI Model")
+        else:
+            await ctx.send(freelancer, ChatMessage(
+                timestamp=datetime.utcnow(),
+                msg_id=uuid4(),
+                content=[
+                    TextContent(type="text", text=f"❌ Job #{job_id} not found. Please search for jobs first."),
+                ]
+            ))
+            ctx.storage.remove("applying_job_id")
+            ctx.storage.remove("applying_freelancer")
+    else:
+        await ctx.send(freelancer, ChatMessage(
+            timestamp=datetime.utcnow(),
+            msg_id=uuid4(),
+            content=[
+                TextContent(type="text", text="❌ No jobs available. Please search for jobs first using 'find jobs'."),
+            ]
+        ))
+        ctx.storage.remove("applying_job_id")
+        ctx.storage.remove("applying_freelancer")
+
+@agent.on_message(model=ProposalGenerated)
+async def handle_proposal_generated(ctx: Context, sender: str, msg: ProposalGenerated):
+    """Handle generated proposal from AI Model"""
+    ctx.logger.info(f"✅ Received generated proposal for Job {msg.job_id}")
+    
+    freelancer = ctx.storage.get("applying_freelancer")
+    
+    if msg.success:
+        # Store the proposal
+        await ctx.send(STORAGE_AGENT_ADDRESS, StoreProposal(
+            job_id=msg.job_id,
+            freelancer_address=msg.freelancer_address,
+            proposal_text=msg.proposal_text,
+            estimated_hours=msg.estimated_hours,
+            timestamp=int(time.time())
+        ))
+        
+        # Notify freelancer
+        await ctx.send(freelancer, ChatMessage(
+            timestamp=datetime.utcnow(),
+            msg_id=uuid4(),
+            content=[
+                TextContent(type="text", text=f"✅ Proposal submitted for Job #{msg.job_id}!\n\n{msg.proposal_text}\n\nEstimated Hours: {msg.estimated_hours}"),
+            ]
+        ))
+    else:
+        await ctx.send(freelancer, ChatMessage(
+            timestamp=datetime.utcnow(),
+            msg_id=uuid4(),
+            content=[
+                TextContent(type="text", text=f"❌ Failed to generate proposal for Job #{msg.job_id}"),
+            ]
+        ))
+    
+    # Clean up
+    ctx.storage.remove("applying_job_id")
+    ctx.storage.remove("applying_freelancer")
+    ctx.storage.remove("applying_wallet")
+
+@agent.on_message(model=ProposalStored)
+async def handle_proposal_stored(ctx: Context, sender: str, msg: ProposalStored):
+    """Confirmation that proposal was stored"""
+    ctx.logger.info(f"✅ Proposal stored: {msg.message}")
 
 # Attach chat protocol to agent
 agent.include(chat_protocol, publish_manifest=True)

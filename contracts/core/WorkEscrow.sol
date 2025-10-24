@@ -74,6 +74,7 @@ contract WorkEscrow is AccessControl, ReentrancyGuard, Pausable {
         ProjectStatus status;        // Current status
         bytes32 yellowChannelId;     // Yellow SDK channel ID
         uint256 sourceChain;         // Chain where funds deposited
+        string[] requiredSkills;     // Required skills for the project
     }
     
     /// @notice Yellow SDK state channel data
@@ -229,7 +230,8 @@ contract WorkEscrow is AccessControl, ReentrancyGuard, Pausable {
         uint256 totalBudget,
         string[] calldata milestoneDescriptions,
         uint256[] calldata milestoneAmounts,
-        uint256[] calldata milestoneDeadlines
+        uint256[] calldata milestoneDeadlines,
+        string[] calldata requiredSkills
     ) external whenNotPaused returns (uint256 projectId) {
         if (client == address(0) || freelancer == address(0)) revert InvalidAddress();
         if (totalBudget == 0) revert InvalidAmount();
@@ -258,7 +260,8 @@ contract WorkEscrow is AccessControl, ReentrancyGuard, Pausable {
             completedAt: 0,
             status: ProjectStatus.Created,
             yellowChannelId: bytes32(0),
-            sourceChain: block.chainid
+            sourceChain: block.chainid,
+            requiredSkills: requiredSkills
         });
         
         // Create milestones
@@ -709,5 +712,15 @@ contract WorkEscrow is AccessControl, ReentrancyGuard, Pausable {
      */
     function unpause() external onlyRole(ADMIN_ROLE) {
         _unpause();
+    }
+    
+    /**
+     * @notice Get required skills for a project
+     * @param projectId Project identifier
+     * @return Array of required skills
+     */
+    function getProjectSkills(uint256 projectId) external view returns (string[] memory) {
+        if (projects[projectId].projectId == 0) revert InvalidProjectId();
+        return projects[projectId].requiredSkills;
     }
 }

@@ -1,109 +1,163 @@
-# shared_models.py
 from uagents import Model
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 
 # ------------------------------
 # Job Fetcher → Job Matcher
 # ------------------------------
 class JobData(Model):
-    jobs: List[Dict] = []
-    total_jobs: int = 0
-    fetched_at: int = 0
-    contract_address: str = ""
+    jobs: List[Dict]
+    total_jobs: int
+    fetched_at: int
+    contract_address: str
 
 class JobFetchRequest(Model):
     requester_address: str
-    filter_status: str = "all"  # all, created, funded, active
-
-class JobFetchResponse(Model):
-    success: bool = True
-    jobs: List[Dict] = []
-    total_jobs: int = 0
-    error: str = ""
+    filter_status: str = "all"
 
 # ------------------------------
-# Job Matcher → AI Model → Freelancer
+# Freelancer Registration
 # ------------------------------
-class MatchedJob(Model):
-    job_id: int
-    title: Optional[str] = None
-    description: Optional[str] = None
-    client: Optional[str] = None
-    budget: Optional[float] = 0.0
-    required_skills: List[str] = []
-    matched_skills: List[str] = []
-    match_score: float = 0.0
-
-class MatchedJobs(Model):
+class RegisterProfileRequest(Model):
     freelancer_address: str
-    matched_jobs: List[MatchedJob] = []
-    total_matches: int = 0
+    skills: List[str]
 
-class JobSummary(Model):
-    job_id: int
-    summary_text: str
-
-class EnhancedJobInfo(Model):
-    job_id: int
-    description: str
-    required_skills: List[str] = []
-    matched_skills: List[str] = []
-    client: str = ""
-    budget: float = 0.0
-    recommendation: str = ""
-    match_percentage: float = 0.0
-
-class EnhancedJobMatchResult(Model):
+class ProfileRegisteredResponse(Model):
+    success: bool
+    message: str
     freelancer_address: str
-    enhanced_jobs: List[EnhancedJobInfo] = []
-    total_matches: int = 0
-    ai_summary: str = ""
-    timestamp: int = 0
-
-# Legacy support
-class EnhancedJobMatchResultLegacy(Model):
-    freelancer_address: str
-    enhanced_jobs: List[Dict] = []
-    total_matches: int = 0
-    ai_recommendations: List[str] = []
-    summary: str = ""
-    timestamp: int = 0
-    original_requester: Optional[str] = None
 
 # ------------------------------
-# Storage / Freelancer Skills Agent
+# Find Jobs Request
 # ------------------------------
 class FindJobsRequest(Model):
     freelancer_address: str
 
+# ------------------------------
+# Job Matcher Models
+# ------------------------------
+class MatchedJob(Model):
+    job_id: int
+    job_summary: str
+    required_skills: List[str]
+    matched_skills: List[str]
+    client: str
+    budget: float
+
+class MatchedJobs(Model):
+    freelancer_address: str
+    matched_jobs: List[MatchedJob]
+    total_matches: int
+
+# ------------------------------
+# AI Model Enhanced Response
+# ------------------------------
+class EnhancedJobInfo(Model):
+    job_id: int
+    description: str
+    required_skills: List[str]
+    matched_skills: List[str]
+    client: str
+    budget: float
+    recommendation: str
+    match_percentage: float
+
+class EnhancedJobMatchResult(Model):
+    freelancer_address: str
+    enhanced_jobs: List[EnhancedJobInfo]
+    total_matches: int
+    ai_summary: str
+    timestamp: int
+
+# ------------------------------
+# Storage Agent Models
+# ------------------------------
 class StoreFreelancerSkills(Model):
     freelancer_address: str
-    skills: List[str] = []
+    skills: List[str]
 
 class SkillsStored(Model):
     freelancer_address: str
-    success: bool = False
-    message: str = ""
+    success: bool
+    message: str
 
 class FreelancerSkillsRequest(Model):
-    requester: str
     freelancer_address: str
+    requester: str
 
 class FreelancerSkillsResponse(Model):
     freelancer_address: str
-    skills: List[str] = []
-    found: bool = False
-    hourly_rate: float = 0.0
-    experience_years: int = 0
-    reputation_score: int = 0
-    availability_hours: int = 0
+    skills: List[str]
+    found: bool
 
 class ListFreelancersRequest(Model):
     requester: str
 
 class ListFreelancersResponse(Model):
-    freelancer_addresses: List[str] = []
-    total_count: int = 0
+    freelancer_addresses: List[str]
+    total_count: int
+
+# ------------------------------
+# Job Application & Proposals
+# ------------------------------
+class GenerateProposalRequest(Model):
+    freelancer_address: str
+    job_id: int
+    job_details: Dict
+    freelancer_skills: List[str]
+
+class ProposalGenerated(Model):
+    freelancer_address: str
+    job_id: int
+    proposal_text: str
+    estimated_hours: int
+    success: bool
+
+class StoreProposal(Model):
+    job_id: int
+    freelancer_address: str
+    proposal_text: str
+    estimated_hours: int
+    timestamp: int
+
+class ProposalStored(Model):
+    job_id: int
+    freelancer_address: str
+    success: bool
+    message: str
+
+class GetProposalsRequest(Model):
+    job_id: int
+    requester: str
+
+class ProposalData(Model):
+    freelancer_address: str
+    proposal_text: str
+    estimated_hours: int
+    timestamp: int
+
+class ProposalsResponse(Model):
+    job_id: int
+    proposals: List[ProposalData]
+    total_count: int
+
+# ------------------------------
+# Client Agent Models
+# ------------------------------
+class JobPosted(Model):
+    client_address: str
+    job_id: int
+    tx_hash: str
+    success: bool
+    message: str
+    timestamp: int
+
+class JobPostConfirmation(Model):
+    client_address: str
+    job_id: int
+    tx_hash: str
+    ai_message: str
+    next_steps: List[str]
+    timestamp: int
 
 # ------------------------------
 # Client Agent → AI Model
@@ -114,23 +168,5 @@ class JobPostRequest(Model):
     title: str
     description: str
     budget: float
-    required_skills: List[str] = []
-    milestones: List[Dict] = []  # [{"description": str, "amount": float}]
-
-class JobPosted(Model):
-    """Confirmation that job was posted on-chain"""
-    client_address: str
-    job_id: int
-    tx_hash: str
-    success: bool
-    message: str
-    timestamp: int
-
-class JobPostConfirmation(Model):
-    """AI-enhanced confirmation message"""
-    client_address: str
-    job_id: int
-    tx_hash: str
-    ai_message: str
-    next_steps: List[str] = []
-    timestamp: int
+    required_skills: List[str]
+    milestones: List[Dict]

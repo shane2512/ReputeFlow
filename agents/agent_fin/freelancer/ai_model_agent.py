@@ -4,7 +4,8 @@ from dotenv import load_dotenv
 from uagents import Agent, Context
 from shared_models import (
     MatchedJobs, EnhancedJobMatchResult, EnhancedJobInfo,
-    JobPosted, JobPostConfirmation
+    JobPosted, JobPostConfirmation,
+    GenerateProposalRequest, ProposalGenerated
 )
 
 load_dotenv()
@@ -180,6 +181,66 @@ Get testnet ETH: https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet
         ctx.logger.info(f"✅ Sent AI-enhanced confirmation to Client Agent")
     except Exception as e:
         ctx.logger.error(f"❌ Failed to send confirmation: {e}")
+
+@agent.on_message(model=GenerateProposalRequest)
+async def generate_proposal(ctx: Context, sender: str, msg: GenerateProposalRequest):
+    """
+    Generate a professional proposal for a job application
+    """
+    ctx.logger.info(f"📝 Generating proposal for Job {msg.job_id} by {msg.freelancer_address}")
+    
+    job = msg.job_details
+    skills = msg.freelancer_skills
+    
+    # Calculate match
+    required_skills = job.get("required_skills", [])
+    matched_skills = [s for s in skills if s.lower() in [r.lower() for r in required_skills]]
+    match_percentage = (len(matched_skills) / len(required_skills) * 100) if required_skills else 100
+    
+    # Generate proposal text
+    proposal = f"""Dear Client,
+
+I am excited to apply for your project (Job #{msg.job_id}). With my expertise in {', '.join(matched_skills)}, I am confident I can deliver exceptional results.
+
+**My Qualifications:**
+- Proficient in: {', '.join(skills)}
+- Match Score: {match_percentage:.0f}% with your requirements
+- Wallet: {msg.freelancer_address[:10]}...{msg.freelancer_address[-8:]}
+
+**Approach:**
+I will carefully review your requirements and deliver high-quality work within the specified timeline. My skills in {', '.join(matched_skills)} directly align with your needs.
+
+**Budget & Timeline:**
+Budget: {job.get('total_budget', 0):.4f} ETH
+I can complete this project efficiently while maintaining the highest standards.
+
+I look forward to working with you!
+
+Best regards,
+Freelancer {msg.freelancer_address[:6]}...{msg.freelancer_address[-4:]}
+"""
+    
+    # Estimate hours based on budget (rough estimate: $50/hour, budget in ETH)
+    budget_eth = job.get('total_budget', 0)
+    estimated_hours = int(budget_eth * 1000)  # Rough conversion
+    if estimated_hours < 10:
+        estimated_hours = 10
+    elif estimated_hours > 200:
+        estimated_hours = 200
+    
+    ctx.logger.info(f"✅ Proposal generated: {len(proposal)} chars, {estimated_hours} hours")
+    
+    # Send back to freelancer agent
+    response = ProposalGenerated(
+        freelancer_address=msg.freelancer_address,
+        job_id=msg.job_id,
+        proposal_text=proposal,
+        estimated_hours=estimated_hours,
+        success=True
+    )
+    
+    await ctx.send(sender, response)
+    ctx.logger.info(f"✅ Sent proposal back to Freelancer Agent")
 
 if __name__ == "__main__":
     agent.run()

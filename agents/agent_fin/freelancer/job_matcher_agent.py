@@ -105,33 +105,31 @@ async def handle_matched_jobs_for_freelancer(ctx: Context, sender: str, msg: Fre
     
     matched_jobs = []
     for job in jobs:
-        # Collect required skills from milestones
-        required_skills = []
-        for milestone in job.get("milestones", []):
-            desc = milestone.get("description", "")
-            if desc:
-                required_skills.append(desc)
+        # Get required skills from the job (now stored on-chain)
+        required_skills = job.get("required_skills", [])
         
         if not required_skills:
             ctx.logger.debug(f"Job {job.get('project_id')} has no required skills, skipping")
             continue
         
-        ctx.logger.info(f"Job {job.get('project_id')} requires: {required_skills}")
+        ctx.logger.info(f"🔍 Job {job.get('project_id')} requires: {required_skills}")
+        ctx.logger.info(f"👤 Freelancer has: {msg.skills}")
+        
+        # Match skills (case-insensitive)
         matched = keyword_match(required_skills, msg.skills)
-        ctx.logger.info(f"Matched skills: {matched}")
+        ctx.logger.info(f"✅ Matched skills: {matched}")
         
         if matched:
             match_score = round(len(matched) / len(required_skills) * 100, 2)
             matched_jobs.append(MatchedJob(
                 job_id=job["project_id"],
-                title=f"Project #{job['project_id']}",
-                description=f"Job from client {job['client'][:10]}... with budget ${job['total_budget']}",
+                job_summary=f"Project #{job['project_id']} - Budget: {job['total_budget']:.4f} ETH",
                 required_skills=required_skills,
                 matched_skills=matched,
                 client=job["client"],
-                budget=job["total_budget"],
-                match_score=match_score
+                budget=job["total_budget"]
             ))
+            ctx.logger.info(f"🎯 Match score: {match_score}%")
     
     # Always send result to AI Model (even if no matches)
     result = MatchedJobs(

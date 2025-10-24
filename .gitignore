@@ -1,85 +1,46 @@
+# Node modules
+node_modules/
+**/node_modules/
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual Environment
-venv/
 env/
+venv/
 ENV/
+*.egg-info/
+dist/
+build/
 
-# IDEs
+# Environment variables
+.env
+.env.local
+**/.env
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# Node modules
-node_modules/
-.next/
-out/
+# Hardhat
+cache/
+artifacts/
+typechain-types/
 
 # Logs
 *.log
 logs/
 
-# Documentation (exclude from commits)
-agents/agentverse_deployments/*.md
-agents/archived_static_agents/
-*.txt
-MIGRATION_TO_CONVERSATIONAL.md
-CONVERSATIONAL_SYSTEM_COMPLETE.md
-COMPLETE_AGENT_SYSTEM.md
-AGENTVERSE_STATUS.txt
-HOW_TO_TEST_AGENTS.txt
-
-# Old agent files (archived)
-agents/agentverse_deployments/FREELANCER_AGENT.py
-agents/agentverse_deployments/CLIENT_AGENT.py
-agents/agentverse_deployments/VALIDATOR_AGENT.py
-agents/agentverse_deployments/COORDINATOR_AGENT.py
-agents/agentverse_deployments/MARKET_ANALYZER_AGENT.py
-agents/agentverse_deployments/REPUTATION_ORACLE_AGENT.py
-agents/agentverse_deployments/*_agentverse.py
-
-# Test files
-test_*.py
-*_test.py
-TEST_*.html
+# OS
+.DS_Store
+Thumbs.db
 
 # Temporary files
 *.tmp
+*.temp
 .cache/
-
-# Agent executors (old system)
-agents/executors/
-
-# Batch files
-*.bat
