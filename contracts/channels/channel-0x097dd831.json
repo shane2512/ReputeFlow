@@ -1,0 +1,16 @@
+{
+  "channelId": "0x097dd831f7c3bc00c863caa5b9f9f261ddc439d51e1c946c10656a668bd37a2b",
+  "participants": [
+    "0xda4626FcE97748B7A78b613c754419c5e3FDAdCA",
+    "0xBC1a6aBB35BEAdEaC90E53Ec757BF9E20f12dCDC"
+  ],
+  "initialDeposits": [
+    "10000000000000000",
+    "0"
+  ],
+  "transactionHash": "0x4df1b60def8bc6563bffedafdf63f73fca12e0d048c9242288ad72cfcca0abe9",
+  "blockNumber": 32519899,
+  "timestamp": "2025-10-18T17:21:22.704Z",
+  "network": "baseSepolia",
+  "chainId": 84532
+}
