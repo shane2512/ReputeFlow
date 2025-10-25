@@ -30,29 +30,32 @@ export function useJobDetails(jobId: bigint | undefined) {
   };
 }
 
-export function useEscrowDetails(escrowId: bigint | undefined) {
-  const { data: escrowDetails, isLoading } = useReadContract({
+export function useEscrowDetails(projectId: bigint | undefined) {
+  const { data: projectData, isLoading } = useReadContract({
     ...CONTRACTS.WorkEscrow,
-    functionName: 'getEscrowDetails',
-    args: escrowId !== undefined ? [escrowId] : undefined,
+    functionName: 'getProject',
+    args: projectId !== undefined ? [projectId] : undefined,
     query: {
-      enabled: escrowId !== undefined,
+      enabled: projectId !== undefined,
     },
   });
 
-  if (!escrowDetails || isLoading) {
+  if (!projectData || isLoading) {
     return { escrowDetails: null, isLoading };
   }
 
-  const details = escrowDetails as any;
+  const details = projectData as any;
   
   return {
     escrowDetails: {
+      projectId: details.projectId,
       client: details.client,
       freelancer: details.freelancer,
-      amount: parseFloat(formatEther(details.amount)),
+      totalBudget: parseFloat(formatEther(details.totalBudget)),
+      paidAmount: parseFloat(formatEther(details.paidAmount)),
       status: Number(details.status),
-      deadline: new Date(Number(details.deadline) * 1000),
+      createdAt: new Date(Number(details.createdAt) * 1000),
+      completedAt: details.completedAt > 0 ? new Date(Number(details.completedAt) * 1000) : null,
     },
     isLoading: false,
   };
