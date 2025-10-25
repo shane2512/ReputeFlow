@@ -7,6 +7,7 @@ Compatible with ASI:One
 import os
 import time
 import json
+import re
 from uagents import Agent, Context, Protocol, Model
 from uagents_core.contrib.protocols.chat import (
     ChatAcknowledgement,
@@ -20,6 +21,41 @@ from eth_account import Account
 from datetime import datetime
 from uuid import uuid4
 from typing import List, Dict
+import sys
+from dotenv import load_dotenv
+
+# Try to import reputation updater
+try:
+    # Try direct import first (for Agentverse - files in same directory)
+    from reputation_updater import approve_deliverable_and_update_reputation
+    REPUTATION_UPDATER_AVAILABLE = True
+    print(f"✅ Reputation updater loaded (same directory)")
+except ImportError:
+    try:
+        # Try from parent directories (for local development)
+        agents_folder = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        sys.path.insert(0, agents_folder)
+        from reputation_updater import approve_deliverable_and_update_reputation
+        REPUTATION_UPDATER_AVAILABLE = True
+        print(f"✅ Reputation updater loaded from: {agents_folder}")
+    except Exception as e:
+        print(f"⚠️ Reputation updater not available: {e}")
+        REPUTATION_UPDATER_AVAILABLE = False
+
+# Try to import NLP service (optional - will fallback if not available)
+try:
+    # Add parent directory to path for nlp_service import
+    if '__file__' in globals():
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from nlp_service import convert_to_command_client
+    NLP_AVAILABLE = True
+except Exception as e:
+    print(f"NLP service not available: {e}")
+    NLP_AVAILABLE = False
+    def convert_to_command_client(text):
+        return text  # Fallback: return original text
+
+load_dotenv()
 
 # Message Models - Embedded for Agentverse compatibility
 class JobPostRequest(Model):
@@ -73,6 +109,7 @@ STORAGE_AGENT_ADDRESS = os.getenv("STORAGE_AGENT_ADDRESS")
 ALCHEMY_API_KEY = os.getenv("ALCHEMY_API_KEY", "dkw5deNwC4xOmi8m-G_Ng")
 PYUSD_NETWORK_URL = f"https://eth-sepolia.g.alchemy.com/v2/{ALCHEMY_API_KEY}"  # Ethereum Sepolia for PYUSD
 PYUSD_ADDRESS = "0xCaC524BcA292aaade2DF8A05cC58F0a65B1B3bB9"  # Ethereum Sepolia PYUSD
+YELLOW_CHANNEL_MANAGER = os.getenv("YELLOW_CHANNEL_MANAGER", "0xC5611b4A46AA158215FB198aB99FcCdB87af62A7")  # Yellow SDK escrow (fixed)
 ESCROW_PRIVATE_KEY = os.getenv("ESCROW_PRIVATE_KEY")  # For releasing payments from escrow
 
 # ERC20 ABI for PYUSD
@@ -135,6 +172,16 @@ WORK_ESCROW_ABI = [
         "type": "function"
     },
     {
+        "inputs": [
+            {"internalType": "uint256", "name": "projectId", "type": "uint256"},
+            {"internalType": "address", "name": "newFreelancer", "type": "address"}
+        ],
+        "name": "updateFreelancer",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
         "inputs": [],
         "name": "nextProjectId",
         "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
@@ -160,6 +207,54 @@ agent = Agent(
 
 # Chat protocol for ASI:One compatibility
 chat_protocol = Protocol(name="ClientChatProtocol", spec=chat_protocol_spec)
+
+def parse_natural_job_post(text: str):
+    """
+    Parse natural language job posting without API
+    Handles formats like: "post a job for Smart Contract Dev budget:20$ description:needed a smart contract skills:solidity,rust"
+    Returns: (title, description, budget, skills) or None if can't parse
+    """
+    text_lower = text.lower()
+    
+    # Try to extract components using regex
+    title = None
+    description = None
+    budget = None
+    skills = []
+    
+    # Extract title (text between "job for" and first keyword)
+    title_match = re.search(r'job\s+for\s+([^:]+?)(?:\s+budget|\s+description|\s+skills|$)', text, re.IGNORECASE)
+    if title_match:
+        title = title_match.group(1).strip()
+    
+    # Extract budget (look for budget: followed by number)
+    budget_match = re.search(r'budget\s*:\s*\$?(\d+(?:\.\d+)?)', text, re.IGNORECASE)
+    if budget_match:
+        budget = float(budget_match.group(1))
+    
+    # Extract description (look for description: or decription:)
+    desc_match = re.search(r'de[sc]ription\s*:\s*([^:]+?)(?:\s+skills|\s+budget|$)', text, re.IGNORECASE)
+    if desc_match:
+        description = desc_match.group(1).strip()
+    
+    # Extract skills (look for skills: followed by comma-separated list)
+    skills_match = re.search(r'skills?\s*:\s*([a-zA-Z,\s]+?)(?:\s+budget|\s+description|$)', text, re.IGNORECASE)
+    if skills_match:
+        skills_text = skills_match.group(1).strip()
+        skills = [s.strip() for s in re.split(r'[,\s]+', skills_text) if s.strip()]
+    
+    # Check if we got minimum required fields
+    if title and budget and (description or skills):
+        # Use title as description if description is missing
+        if not description:
+            description = f"Project requiring {', '.join(skills)}"
+        # Use generic skill if skills missing
+        if not skills:
+            skills = ["General"]
+        
+        return title, description, budget, skills
+    
+    return None
 
 def get_wallet_address():
     """Get wallet address from private key"""
@@ -432,16 +527,125 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
         if isinstance(item, TextContent):
             text += item.text
     
+    # Extract wallet address if embedded in message
+    wallet_address = None
+    if text.startswith('[WALLET:'):
+        # Extract wallet address from [WALLET:0x...] prefix
+        end_bracket = text.find(']')
+        if end_bracket > 0:
+            wallet_address = text[8:end_bracket]  # Skip '[WALLET:'
+            text = text[end_bracket + 1:].strip()  # Remove prefix from text
+            ctx.logger.info(f"👛 Extracted wallet address: {wallet_address}")
+            ctx.storage.set("current_wallet_address", wallet_address)
+    
     ctx.logger.info(f"💬 Received chat message from {sender}: {text}")
+    
+    # Convert natural language to command using NLP
+    original_text = text
+    text = convert_to_command_client(text)
+    
+    if text != original_text:
+        ctx.logger.info(f"🤖 NLP converted: '{original_text}' → '{text}'")
     
     response_text = ""
     
     # Parse commands
     text_lower = text.lower().strip()
     
-    if "post job" in text_lower or "create job" in text_lower:
-        # Format: "post job: Build DeFi Dashboard | Looking for blockchain dev | 5000 | solidity,react,web3"
-        if "|" in text:
+    if "post job" in text_lower or "create job" in text_lower or "post a job" in text_lower:
+        # Try natural language parsing first
+        parsed = parse_natural_job_post(text)
+        
+        if parsed:
+            # Natural language format parsed successfully
+            title, description, budget, skills = parsed
+            ctx.logger.info(f"✅ Parsed natural language job post: {title}, ${budget}, {skills}")
+            
+            # Process the parsed job data
+            budget_eth = budget * 0.001
+            budget_wei = int(budget_eth * 10**18)
+            
+            # Split into milestones
+            milestone1_wei = int(budget_wei * 0.3)
+            milestone2_wei = int(budget_wei * 0.4)
+            milestone3_wei = budget_wei - milestone1_wei - milestone2_wei
+            
+            job_data = {
+                "title": title,
+                "description": description,
+                "budget": budget,
+                "budget_eth": budget_eth,
+                "skills": skills,
+                "milestones": [
+                    {"description": "Initial milestone", "amount": milestone1_wei / 10**18},
+                    {"description": "Development milestone", "amount": milestone2_wei / 10**18},
+                    {"description": "Final delivery", "amount": milestone3_wei / 10**18}
+                ],
+                "client": sender
+            }
+            
+            ctx.storage.set(f"pending_job_{sender}", json.dumps(job_data))
+            
+            response_text = f"""
+📝 Job Details Received:
+   • Title: {title}
+   • Budget: ${budget:.2f}
+   • Skills: {', '.join(skills)}
+
+⏳ Posting job on-chain...
+This may take 30-60 seconds. I'll notify you when it's complete!
+"""
+            
+            # Post job on-chain
+            success, job_id, tx_hash, message = post_job_on_chain(ctx, job_data)
+            
+            if success:
+                ctx.storage.set(f"job_{job_id}", json.dumps({
+                    "job_id": job_id,
+                    "tx_hash": tx_hash,
+                    "client": sender,
+                    "title": title,
+                    "budget": budget
+                }))
+                
+                if AI_MODEL_AGENT_ADDRESS:
+                    await ctx.send(AI_MODEL_AGENT_ADDRESS, JobPosted(
+                        client_address=sender,
+                        job_id=job_id,
+                        tx_hash=tx_hash,
+                        success=True,
+                        message=message,
+                        timestamp=int(time.time())
+                    ))
+                
+                response_text += f"""
+
+✅ Job Posted Successfully!
+
+📊 Details:
+   • Job ID: #{job_id}
+   • Transaction: {tx_hash[:10]}...{tx_hash[-8:]}
+   • Network: Base Sepolia
+
+🔗 View on BaseScan:
+https://sepolia.basescan.org/tx/{tx_hash}
+
+Your job is now live! Freelancers will start seeing it shortly.
+"""
+            else:
+                response_text += f"""
+
+❌ Job Posting Failed
+
+Error: {message}
+
+Please check:
+• Your wallet has sufficient Base Sepolia ETH
+• The contract is correctly configured
+• Try again or contact support
+"""
+        elif "|" in text:
+            # Format: "post job: Build DeFi Dashboard | Looking for blockchain dev | 5000 | solidity,react,web3"
             try:
                 parts = text.split(":", 1)[1].split("|")
                 if len(parts) >= 4:
@@ -640,7 +844,8 @@ Job #{job['job_id']}
                         job_id=job_id,
                         requester=str(agent.address)
                     ))
-                    response_text = f"📋 Fetching proposals for Job #{job_id}...\nPlease wait a moment."
+                    # Don't send response now - wait for proposals from storage agent
+                    response_text = None
                 else:
                     response_text = "❌ Storage agent not configured"
             else:
@@ -707,6 +912,152 @@ This will:
             ctx.logger.error(f"Error accepting proposal: {e}")
             response_text = f"❌ Error: {str(e)}\n\nFormat: 'accept proposal: 1 0x123...'"
     
+    elif "approve deliverable" in text_lower or "approve delivery" in text_lower:
+        # Format: "approve deliverable: 1 95" or "approve deliverable: 1"
+        try:
+            parts = text.split(":", 1)[1].strip().split()
+            if len(parts) >= 1:
+                project_id = int(parts[0])
+                quality_score = int(parts[1]) if len(parts) > 1 else 90  # Default 90/100
+                
+                # Validate quality score
+                if quality_score < 0 or quality_score > 100:
+                    response_text = "❌ Quality score must be between 0 and 100"
+                else:
+                    ctx.logger.info(f"Approving deliverable for project {project_id}")
+                    ctx.logger.info(f"Quality Score: {quality_score}/100")
+                    
+                    # Update reputation on-chain (fetches data from contract automatically)
+                    if REPUTATION_UPDATER_AVAILABLE:
+                        try:
+                            # Simplified call - only needs project_id and quality_score
+                            # All other data is fetched from WorkEscrow contract
+                            result = approve_deliverable_and_update_reputation(
+                                project_id=project_id,
+                                quality_score=quality_score
+                            )
+                            
+                            if result.get("success"):
+                                reputation_tx = result.get("tx_hash", "")
+                                
+                                response_text = f"""✅ Deliverable Approved!
+
+Project #{project_id} completed successfully!
+
+⭐ Quality Score: {quality_score}/100
+
+📊 Reputation Updated On-Chain! ✅
+- Project data fetched from WorkEscrow contract
+- Completed projects incremented
+- Total earnings updated
+- Average rating recalculated
+- Skill badges updated
+
+🔗 Reputation TX (Base Sepolia): {reputation_tx[:10]}...{reputation_tx[-8:]}
+View: https://sepolia.basescan.org/tx/{reputation_tx}
+"""
+                                
+                                # Check for PYUSD escrow and release it
+                                pyusd_released = False
+                                pyusd_tx = ""
+                                pyusd_error = ""
+                                channel_key = f"channel_{project_id}"
+                                channel_data_json = ctx.storage.get(channel_key)
+                                
+                                if channel_data_json:
+                                    try:
+                                        channel_data = json.loads(channel_data_json)
+                                        if channel_data.get("status") != "released":
+                                            ctx.logger.info(f"💰 Releasing PYUSD escrow for project {project_id}...")
+                                            success, tx, message = release_escrow_funds(ctx, project_id, channel_data)
+                                            if success:
+                                                pyusd_released = True
+                                                pyusd_tx = tx
+                                                # Update channel status
+                                                channel_data["status"] = "released"
+                                                channel_data["release_tx"] = tx
+                                                ctx.storage.set(channel_key, json.dumps(channel_data))
+                                                ctx.logger.info(f"✅ PYUSD released: {tx}")
+                                            else:
+                                                pyusd_error = message
+                                                ctx.logger.error(f"❌ PYUSD release failed: {message}")
+                                        else:
+                                            ctx.logger.info(f"ℹ️ PYUSD already released for project {project_id}")
+                                    except Exception as e:
+                                        pyusd_error = str(e)
+                                        ctx.logger.error(f"Error releasing PYUSD: {e}")
+                                else:
+                                    ctx.logger.info(f"ℹ️ No PYUSD escrow found for project {project_id}")
+                                
+                                # Show PYUSD payment release results
+                                if pyusd_released and pyusd_tx:
+                                    response_text += f"""
+💵 PYUSD Payment Released! ✅
+- PYUSD transferred from Yellow SDK escrow to freelancer
+- Released on Ethereum Sepolia network
+
+🔗 PYUSD TX (Ethereum Sepolia): {pyusd_tx[:10]}...{pyusd_tx[-8:]}
+View: https://sepolia.etherscan.io/tx/{pyusd_tx}
+
+🎉 Complete! Reputation updated AND PYUSD payment released!
+"""
+                                elif pyusd_error:
+                                    response_text += f"""
+⚠️ PYUSD Payment Release Failed
+- Reputation was updated successfully
+- PYUSD release error: {pyusd_error}
+
+Please check:
+- PYUSD escrow has sufficient balance
+- Yellow SDK channel is properly configured
+- Client wallet has gas for Ethereum Sepolia
+"""
+                                else:
+                                    response_text += "\n✅ Reputation updated! (No PYUSD escrow found for this project)"
+                            else:
+                                error_msg = result.get("error", "Unknown error")
+                                response_text = f"""⚠️ Reputation Update Failed
+
+Project #{project_id} - Failed to update reputation:
+{error_msg}
+
+Possible issues:
+- Project not found in WorkEscrow contract
+- No freelancer assigned to project
+- Validator wallet needs Base Sepolia ETH
+- Contract address mismatch
+"""
+                        except Exception as e:
+                            ctx.logger.error(f"Error updating reputation: {e}")
+                            response_text = f"""⚠️ Reputation Update Error
+
+Project #{project_id} - Error occurred:
+{str(e)}
+
+Check agent logs for details.
+"""
+                    else:
+                        response_text = f"""⚠️ Reputation Updater Not Available
+
+Project #{project_id} cannot be processed.
+
+Reputation updater module not found. Please check:
+- reputation_updater.py exists in agents folder
+- All dependencies installed
+"""
+            else:
+                response_text = """❌ Invalid format.
+
+Usage: approve deliverable: <project_id> [quality_score]
+
+Examples:
+- approve deliverable: 1 95
+- approve deliverable: 2 (defaults to 90/100)
+"""
+        except Exception as e:
+            ctx.logger.error(f"Error approving deliverable: {e}")
+            response_text = f"❌ Error: {str(e)}\n\nFormat: 'approve deliverable: 1 95'"
+    
     elif "deposit funds" in text_lower or "fund project" in text_lower:
         # Format: "deposit funds: 1"
         try:
@@ -756,66 +1107,8 @@ The freelancer can start working on Job #{job_id}.
             ctx.logger.error(f"Error depositing funds: {e}")
             response_text = f"❌ Error: {str(e)}\n\nFormat: 'deposit funds: 1'"
     
-    elif "approve" in text_lower and "deliverable" in text_lower:
-        # Approve deliverable and release payment
-        # Format: "approve deliverable: 1"
-        try:
-            import re
-            if ":" in text:
-                job_id = int(text.split(":", 1)[1].strip())
-            else:
-                numbers = re.findall(r'\d+', text)
-                job_id = int(numbers[0]) if numbers else None
-            
-            if job_id:
-                # Get channel data
-                channel_key = f"channel_{job_id}"
-                channel_data_json = ctx.storage.get(channel_key)
-                
-                if not channel_data_json:
-                    response_text = f"❌ No escrow found for Job #{job_id}. Please deposit funds first."
-                else:
-                    channel_data = json.loads(channel_data_json)
-                    
-                    if channel_data.get("status") == "released":
-                        response_text = f"✅ Payment for Job #{job_id} has already been released!"
-                    else:
-                        response_text = f"🔓 Releasing payment for Job #{job_id}...\n\nThis may take 30-60 seconds."
-                        
-                        # Release funds from escrow
-                        success, release_tx, message = release_escrow_funds(ctx, job_id, channel_data)
-                        
-                        if success:
-                            # Update channel status
-                            channel_data["status"] = "released"
-                            channel_data["release_tx"] = release_tx
-                            channel_data["release_timestamp"] = int(time.time())
-                            ctx.storage.set(channel_key, json.dumps(channel_data))
-                            
-                            amount = channel_data.get("amount", 0)
-                            freelancer = channel_data.get("freelancer", "Unknown")
-                            
-                            response_text += f"""
-
-✅ Payment Released Successfully!
-
-Job #{job_id}
-💰 Amount: ${amount:.2f} PYUSD
-👤 Freelancer: {freelancer[:10]}...{freelancer[-8:]}
-🔗 Release TX: {release_tx[:10]}...{release_tx[-8:]}
-
-View Transaction:
-https://sepolia.etherscan.io/tx/{release_tx}
-
-🎉 Job Complete! The freelancer has been paid.
-"""
-                        else:
-                            response_text += f"\n\n❌ Release failed: {message}\n\nPlease check:\n• Escrow balance\n• Gas balance\n• Contract permissions"
-            else:
-                response_text = "❌ Please provide job ID.\n\nFormat: 'approve deliverable: 1'"
-        except Exception as e:
-            ctx.logger.error(f"Error approving deliverable: {e}")
-            response_text = f"❌ Error: {str(e)}\n\nFormat: 'approve deliverable: 1'"
+    # REMOVED: Duplicate "approve deliverable" handler
+    # The correct handler is at line 755 which updates reputation on-chain
     
     elif "help" in text_lower:
         wallet = get_wallet_address()
@@ -854,7 +1147,16 @@ https://sepolia.etherscan.io/tx/{release_tx}
    Example:
    accept proposal: 1 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
 
-6️⃣ Deposit Funds (PYUSD):
+6️⃣ Approve Deliverable (Updates Reputation):
+   approve deliverable: [project_id] [quality_score]
+   
+   Examples:
+   approve deliverable: 1 95
+   approve deliverable: 2 (defaults to 90/100)
+   
+   This automatically updates the freelancer's reputation on-chain! ✅
+
+7️⃣ Deposit Funds (PYUSD):
    deposit funds: [job_id]
    
    Example:
@@ -877,14 +1179,15 @@ Try:
 • 'help' - for more information
 """
     
-    # Send response back
-    await ctx.send(sender, ChatMessage(
-        timestamp=datetime.utcnow(),
-        msg_id=uuid4(),
-        content=[
-            TextContent(type="text", text=response_text),
-        ]
-    ))
+    # Send response back (only if we have a response)
+    if response_text is not None:
+        await ctx.send(sender, ChatMessage(
+            timestamp=datetime.utcnow(),
+            msg_id=uuid4(),
+            content=[
+                TextContent(type="text", text=response_text),
+            ]
+        ))
 
 
 @chat_protocol.on_message(ChatAcknowledgement)
@@ -1058,31 +1361,36 @@ def update_freelancer_in_contract(ctx: Context, job_id: int, freelancer_address:
             abi=WORK_ESCROW_ABI
         )
         
-        # Note: You need to add updateFreelancer function to your contract
-        # For now, we'll log this action
-        ctx.logger.info(f"✅ Accepting proposal for Job {job_id}")
+        ctx.logger.info(f"🔄 Updating freelancer on-chain for Job #{job_id}")
+        ctx.logger.info(f"   Client: {account.address}")
         ctx.logger.info(f"   Freelancer: {freelancer_address}")
         
-        # TODO: Add actual contract call when updateFreelancer is implemented
-        # tx = contract.functions.updateFreelancer(
-        #     job_id,
-        #     Web3.to_checksum_address(freelancer_address)
-        # ).build_transaction({
-        #     'from': account.address,
-        #     'nonce': w3.eth.get_transaction_count(account.address, 'pending'),
-        #     'gas': 200000,
-        #     'gasPrice': w3.eth.gas_price
-        # })
-        # 
-        # signed_tx = account.sign_transaction(tx)
-        # tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-        # receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+        # Build transaction to update freelancer address on-chain
+        tx = contract.functions.updateFreelancer(
+            job_id,
+            Web3.to_checksum_address(freelancer_address)
+        ).build_transaction({
+            'from': account.address,
+            'nonce': w3.eth.get_transaction_count(account.address, 'pending'),
+            'gas': 200000,
+            'gasPrice': w3.eth.gas_price
+        })
         
-        # For now, return success with a placeholder tx hash
-        placeholder_tx = "0x" + "0" * 64
-        ctx.logger.info(f"✅ Proposal accepted (contract update pending implementation)")
+        # Sign and send transaction
+        signed_tx = account.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
         
-        return True, placeholder_tx
+        ctx.logger.info(f"📤 Transaction sent: {tx_hash.hex()}")
+        
+        # Wait for confirmation
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+        
+        if receipt['status'] == 1:
+            ctx.logger.info(f"✅ Freelancer updated on-chain! Block: {receipt['blockNumber']}")
+            return True, tx_hash.hex()
+        else:
+            ctx.logger.error(f"❌ Transaction failed: {tx_hash.hex()}")
+            return False, tx_hash.hex()
         
     except Exception as e:
         ctx.logger.error(f"❌ Failed to update freelancer: {e}")
@@ -1328,6 +1636,51 @@ def release_escrow_funds(ctx: Context, job_id: int, channel_data: dict):
         ctx.logger.info(f"   Job ID: {job_id}")
         ctx.logger.info(f"   Freelancer: {freelancer_address}")
         ctx.logger.info(f"   Amount: {amount_usd} PYUSD")
+        
+        # Check escrow status first
+        try:
+            GET_ESCROW_ABI = [{
+                "inputs": [{"internalType": "uint256", "name": "jobId", "type": "uint256"}],
+                "name": "getEscrow",
+                "outputs": [{
+                    "components": [
+                        {"internalType": "uint256", "name": "jobId", "type": "uint256"},
+                        {"internalType": "address", "name": "client", "type": "address"},
+                        {"internalType": "address", "name": "freelancer", "type": "address"},
+                        {"internalType": "uint256", "name": "amount", "type": "uint256"},
+                        {"internalType": "bool", "name": "isReleased", "type": "bool"},
+                        {"internalType": "uint256", "name": "depositedAt", "type": "uint256"},
+                        {"internalType": "uint256", "name": "releasedAt", "type": "uint256"}
+                    ],
+                    "internalType": "struct YellowChannelManager.JobEscrow",
+                    "name": "",
+                    "type": "tuple"
+                }],
+                "stateMutability": "view",
+                "type": "function"
+            }]
+            
+            check_contract = w3_pyusd.eth.contract(
+                address=Web3.to_checksum_address(escrow_wallet),
+                abi=GET_ESCROW_ABI
+            )
+            
+            escrow_info = check_contract.functions.getEscrow(job_id).call()
+            ctx.logger.info(f"📊 Escrow Status:")
+            ctx.logger.info(f"   Job ID: {escrow_info[0]}")
+            ctx.logger.info(f"   Client: {escrow_info[1]}")
+            ctx.logger.info(f"   Freelancer: {escrow_info[2]}")
+            ctx.logger.info(f"   Amount: {escrow_info[3] / 10**6} PYUSD")
+            ctx.logger.info(f"   Is Released: {escrow_info[4]}")
+            
+            if escrow_info[3] == 0:
+                return False, "", f"Job {job_id} not found in escrow. Did you call recordDeposit()?"
+            
+            if escrow_info[4]:
+                return False, "", f"Payment for job {job_id} was already released"
+                
+        except Exception as check_error:
+            ctx.logger.warning(f"⚠️ Could not check escrow status: {check_error}")
         
         # Build release transaction
         release_tx = yellow_contract.functions.releasePayment(job_id).build_transaction({

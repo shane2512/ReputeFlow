@@ -19,8 +19,23 @@ from uuid import uuid4
 import os
 import time
 import json
+import sys
+import re
 from dotenv import load_dotenv
 from web3 import Web3
+
+# Try to import NLP service (optional - will fallback if not available)
+try:
+    # Add parent directory to path for nlp_service import
+    if '__file__' in globals():
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from nlp_service import convert_to_command_freelancer
+    NLP_AVAILABLE = True
+except Exception as e:
+    print(f"NLP service not available: {e}")
+    NLP_AVAILABLE = False
+    def convert_to_command_freelancer(text):
+        return text  # Fallback: return original text
 
 load_dotenv()
 
@@ -53,6 +68,39 @@ else:
 # Chat protocol for ASI:One compatibility
 chat_protocol = Protocol(name="FreelancerChatProtocol", spec=chat_protocol_spec)
 
+def parse_natural_skills_registration(text: str):
+    """
+    Parse natural language skills registration without API
+    Handles formats like: "register my skills python solidity rust"
+    Returns: list of skills or None if can't parse
+    """
+    text_lower = text.lower()
+    
+    # Check if it's a skills registration intent
+    if not any(word in text_lower for word in ['register', 'skill', 'my skill']):
+        return None
+    
+    skills = []
+    
+    # Try format with colon: "register skills: python, solidity"
+    if ':' in text:
+        skills_part = text.split(':', 1)[1].strip()
+        skills = [s.strip() for s in re.split(r'[,\s]+', skills_part) if s.strip()]
+    else:
+        # Try natural format: "register my skills python solidity rust"
+        # Remove common words
+        words_to_remove = [
+            'register', 'my', 'skills', 'skill', 'are', 'is', 'in', 'with', 
+            'i', 'know', 'can', 'do', 'want', 'to', 'the', 'a', 'an', 'and', 'or'
+        ]
+        words = text.lower().split()
+        skills = [w.strip() for w in words if w.strip() and w.strip() not in words_to_remove and len(w) > 1]
+    
+    # Filter out empty strings and return
+    skills = [s for s in skills if s and len(s) > 1]
+    
+    return skills if len(skills) > 0 else None
+
 @agent.on_event("startup")
 async def startup(ctx: Context):
     ctx.logger.info("🚀 Freelancer Agent started")
@@ -84,7 +132,25 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
         if isinstance(item, TextContent):
             text += item.text
     
+    # Extract wallet address if embedded in message
+    wallet_address = None
+    if text.startswith('[WALLET:'):
+        # Extract wallet address from [WALLET:0x...] prefix
+        end_bracket = text.find(']')
+        if end_bracket > 0:
+            wallet_address = text[8:end_bracket]  # Skip '[WALLET:'
+            text = text[end_bracket + 1:].strip()  # Remove prefix from text
+            ctx.logger.info(f"👛 Extracted wallet address: {wallet_address}")
+            ctx.storage.set("current_wallet_address", wallet_address)
+    
     ctx.logger.info(f"💬 Received chat message: {text}")
+    
+    # Convert natural language to command using NLP
+    original_text = text
+    text = convert_to_command_freelancer(text)
+    
+    if text != original_text:
+        ctx.logger.info(f"🤖 NLP converted: '{original_text}' → '{text}'")
     
     response_text = ""
     
@@ -92,28 +158,24 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
     text_lower = text.lower().strip()
     
     if "register" in text_lower and "skill" in text_lower:
-        # Extract skills from message
-        # Format: "register skills: python, solidity, react"
-        if ":" in text:
-            skills_part = text.split(":", 1)[1].strip()
-            skills = [s.strip() for s in skills_part.split(",") if s.strip()]
+        # Try natural language parsing first
+        skills = parse_natural_skills_registration(text)
+        
+        if skills:
+            ctx.logger.info(f"✅ Parsed skills: {skills}")
+            # Store freelancer address and initiate registration
+            ctx.storage.set("pending_registration", sender)
+            ctx.storage.set("pending_skills", str(skills))
             
-            if skills:
-                # Store freelancer address and initiate registration
-                ctx.storage.set("pending_registration", sender)
-                ctx.storage.set("pending_skills", str(skills))
-                
-                # Send to storage agent
-                await ctx.send(STORAGE_AGENT_ADDRESS, StoreFreelancerSkills(
-                    freelancer_address=sender,
-                    skills=skills
-                ))
-                
-                response_text = f"✅ Registering your skills: {', '.join(skills)}\nI'll notify you once registration is complete."
-            else:
-                response_text = "❌ Please provide skills in format: 'register skills: python, solidity, react'"
+            # Send to storage agent
+            await ctx.send(STORAGE_AGENT_ADDRESS, StoreFreelancerSkills(
+                freelancer_address=sender,
+                skills=skills
+            ))
+            
+            response_text = f"✅ Registering your skills: {', '.join(skills)}\nI'll notify you once registration is complete."
         else:
-            response_text = "❌ Please provide skills in format: 'register skills: python, solidity, react'"
+            response_text = "❌ Please provide skills. Try: 'register skills: python, solidity' or 'register my skills python solidity'"
     
     elif "find" in text_lower and "job" in text_lower:
         # Initiate job search
@@ -128,7 +190,8 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
         ))
         
         ctx.logger.info(f"🔍 Job search initiated for {sender}")
-        response_text = "🔍 Searching for matching jobs...\nI'll send you the results shortly!"
+        # Don't send response now - wait for AI-enhanced results
+        response_text = None
     
     elif "apply" in text_lower and "job" in text_lower:
         # Apply for a job
@@ -146,12 +209,16 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
             if job_id_str:
                 job_id = int(job_id_str)
                 
+                # Get wallet address from storage
+                wallet_addr = ctx.storage.get("current_wallet_address")
+                
                 # Store application context
                 ctx.storage.set("applying_job_id", job_id)
                 ctx.storage.set("applying_freelancer", sender)
-                ctx.storage.set("applying_wallet", FREELANCER_WALLET)
+                ctx.storage.set("applying_wallet", wallet_addr)
                 
                 ctx.logger.info(f"📝 Applying for Job {job_id} from {sender}")
+                ctx.logger.info(f"👛 Using wallet: {wallet_addr}")
                 
                 # First, get freelancer skills
                 await ctx.send(STORAGE_AGENT_ADDRESS, FreelancerSkillsRequest(
@@ -159,7 +226,8 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
                     requester=str(ctx.agent.address)
                 ))
                 
-                response_text = f"📝 Generating proposal for Job #{job_id}...\nPlease wait while I prepare your application."
+                # Don't send response now - wait for AI-generated proposal
+                response_text = None
             else:
                 response_text = "❌ Please provide a job ID. Format: 'apply job: 1'"
         except Exception as e:
@@ -211,7 +279,9 @@ Job #{job_id}
         response_text = (
             "👋 Welcome to ReputeFlow Freelancer Agent!\n\n"
             "Available commands:\n"
-            "1️⃣ Register skills: 'register skills: python, solidity, react'\n"
+            "1️⃣ Register skills:\n"
+            "   • 'register skills: python, solidity, react'\n"
+            "   • 'register my skills python solidity rust'\n"
             "2️⃣ Find jobs: 'find jobs'\n"
             "3️⃣ Apply for job: 'apply job: 1'\n"
             "4️⃣ Submit deliverable: 'submit deliverable: 1 https://ipfs.io/... Description'\n"
@@ -223,19 +293,20 @@ Job #{job_id}
         response_text = (
             "🤔 I didn't understand that command.\n\n"
             "Try:\n"
-            "• 'register skills: python, solidity, react' - to register your skills\n"
+            "• 'register skills: python, solidity' or 'register my skills python solidity'\n"
             "• 'find jobs' - to search for matching jobs\n"
             "• 'help' - for more information"
         )
     
-    # Send response back
-    await ctx.send(sender, ChatMessage(
-        timestamp=datetime.utcnow(),
-        msg_id=uuid4(),
-        content=[
-            TextContent(type="text", text=response_text),
-        ]
-    ))
+    # Send response back (only if we have a response)
+    if response_text is not None:
+        await ctx.send(sender, ChatMessage(
+            timestamp=datetime.utcnow(),
+            msg_id=uuid4(),
+            content=[
+                TextContent(type="text", text=response_text),
+            ]
+        ))
 
 @chat_protocol.on_message(ChatAcknowledgement)
 async def handle_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):
@@ -414,14 +485,17 @@ async def handle_skills_for_application(ctx: Context, sender: str, msg: Freelanc
     
     # Get job details from storage
     jobs_json = ctx.storage.get("latest_jobs")
+    wallet_addr = ctx.storage.get("applying_wallet")
+    
     if jobs_json:
         jobs = json.loads(jobs_json)
         job_details = next((j for j in jobs if j.get("project_id") == job_id), None)
         
         if job_details:
             # Request AI to generate proposal
+            ctx.logger.info(f"📝 Using wallet address for proposal: {wallet_addr}")
             await ctx.send(AI_MODEL_ADDRESS, GenerateProposalRequest(
-                freelancer_address=FREELANCER_WALLET,
+                freelancer_address=wallet_addr,
                 job_id=job_id,
                 job_details=job_details,
                 freelancer_skills=msg.skills
