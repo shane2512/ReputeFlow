@@ -94,11 +94,12 @@ contract YellowChannelManager is AccessControl, ReentrancyGuard {
         require(!escrow.isReleased, "Already released");
         require(pyusdToken.balanceOf(address(this)) >= escrow.amount, "Insufficient balance");
         
+        // Transfer PYUSD to freelancer FIRST (Checks-Effects-Interactions pattern)
+        require(pyusdToken.transfer(escrow.freelancer, escrow.amount), "Transfer failed");
+        
+        // Update state AFTER successful transfer
         escrow.isReleased = true;
         escrow.releasedAt = block.timestamp;
-        
-        // Transfer PYUSD to freelancer
-        require(pyusdToken.transfer(escrow.freelancer, escrow.amount), "Transfer failed");
         
         emit FundsReleased(jobId, escrow.freelancer, escrow.amount);
     }

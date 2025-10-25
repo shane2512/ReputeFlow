@@ -152,6 +152,7 @@ contract WorkEscrow is AccessControl, ReentrancyGuard, Pausable {
     // ============ Events ============
     
     event ProjectCreated(uint256 indexed projectId, address indexed client, address indexed freelancer, uint256 totalBudget);
+    event FreelancerUpdated(uint256 indexed projectId, address indexed oldFreelancer, address indexed newFreelancer);
     event FundsDeposited(uint256 indexed projectId, uint256 amount, uint256 sourceChain);
     event YellowChannelCreated(bytes32 indexed channelId, uint256 indexed projectId, address[] participants);
     event MilestoneSubmitted(uint256 indexed projectId, uint256 milestoneId, string deliverableHash);
@@ -281,6 +282,27 @@ contract WorkEscrow is AccessControl, ReentrancyGuard, Pausable {
         emit ProjectCreated(projectId, client, freelancer, totalBudget);
         
         return projectId;
+    }
+    
+    /**
+     * @notice Update freelancer address for a project (only in Created status)
+     * @param projectId Project identifier
+     * @param newFreelancer New freelancer address
+     */
+    function updateFreelancer(
+        uint256 projectId,
+        address newFreelancer
+    ) external whenNotPaused {
+        Project storage project = projects[projectId];
+        if (project.projectId == 0) revert InvalidProjectId();
+        if (msg.sender != project.client) revert UnauthorizedAccess();
+        if (project.status != ProjectStatus.Created) revert InvalidProjectStatus();
+        if (newFreelancer == address(0)) revert InvalidAddress();
+        
+        address oldFreelancer = project.freelancer;
+        project.freelancer = newFreelancer;
+        
+        emit FreelancerUpdated(projectId, oldFreelancer, newFreelancer);
     }
     
     /**
