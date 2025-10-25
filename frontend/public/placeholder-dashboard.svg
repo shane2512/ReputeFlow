@@ -1,0 +1,45 @@
+<svg width="1400" height="720" viewBox="0 0 1400 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1400" height="720" fill="#0a0a0a"/>
+  <rect x="40" y="40" width="1320" height="640" rx="8" fill="#171717"/>
+  
+  <!-- Header -->
+  <rect x="60" y="60" width="200" height="40" rx="4" fill="#27272a"/>
+  <rect x="1180" y="60" width="160" height="40" rx="20" fill="#06b6d4"/>
+  
+  <!-- Sidebar -->
+  <rect x="60" y="120" width="200" height="560" rx="4" fill="#27272a"/>
+  <rect x="80" y="140" width="160" height="40" rx="4" fill="#3f3f46"/>
+  <rect x="80" y="200" width="160" height="40" rx="4" fill="#18181b"/>
+  <rect x="80" y="260" width="160" height="40" rx="4" fill="#18181b"/>
+  <rect x="80" y="320" width="160" height="40" rx="4" fill="#18181b"/>
+  
+  <!-- Main Content -->
+  <rect x="280" y="120" width="1060" height="200" rx="8" fill="#27272a"/>
+  <rect x="300" y="140" width="300" height="30" rx="4" fill="#3f3f46"/>
+  <rect x="300" y="180" width="500" height="20" rx="4" fill="#18181b"/>
+  <rect x="300" y="210" width="400" height="20" rx="4" fill="#18181b"/>
+  <rect x="300" y="240" width="200" height="40" rx="20" fill="#06b6d4"/>
+  
+  <!-- Cards -->
+  <rect x="280" y="340" width="340" height="340" rx="8" fill="#27272a"/>
+  <rect x="300" y="360" width="300" height="120" rx="4" fill="#18181b"/>
+  <rect x="300" y="500" width="200" height="20" rx="4" fill="#3f3f46"/>
+  <rect x="300" y="530" width="250" height="20" rx="4" fill="#18181b"/>
+  <rect x="300" y="560" width="150" height="20" rx="4" fill="#18181b"/>
+  
+  <rect x="640" y="340" width="340" height="340" rx="8" fill="#27272a"/>
+  <rect x="660" y="360" width="300" height="120" rx="4" fill="#18181b"/>
+  <rect x="660" y="500" width="200" height="20" rx="4" fill="#3f3f46"/>
+  <rect x="660" y="530" width="250" height="20" rx="4" fill="#18181b"/>
+  <rect x="660" y="560" width="150" height="20" rx="4" fill="#18181b"/>
+  
+  <rect x="1000" y="340" width="340" height="340" rx="8" fill="#27272a"/>
+  <rect x="1020" y="360" width="300" height="120" rx="4" fill="#18181b"/>
+  <rect x="1020" y="500" width="200" height="20" rx="4" fill="#3f3f46"/>
+  <rect x="1020" y="530" width="250" height="20" rx="4" fill="#18181b"/>
+  <rect x="1020" y="560" width="150" height="20" rx="4" fill="#18181b"/>
+  
+  <!-- Center Text -->
+  <text x="700" y="360" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#06b6d4" text-anchor="middle">ReputeFlow</text>
+  <text x="700" y="400" font-family="Arial, sans-serif" font-size="24" fill="#a1a1aa" text-anchor="middle">Dashboard Preview</text>
+</svg>
