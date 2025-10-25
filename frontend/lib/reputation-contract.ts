@@ -3,7 +3,7 @@
  * Handles interactions with ReputationRegistry.sol
  */
 
-import { ethers } from 'ethers';
+import { keccak256, toBytes } from 'viem';
 
 // Contract address (Base Sepolia)
 export const REPUTATION_REGISTRY_ADDRESS = '0xFA07a0C1A3Cbc2aB9CB5e8b81A8c62c077925026';
@@ -106,157 +106,10 @@ export interface SkillBadge {
 }
 
 /**
- * Get reputation score for a freelancer
+ * Utility: Convert IPFS hash to bytes32
  */
-export async function getReputationScore(
-  provider: ethers.Provider,
-  freelancerAddress: string
-): Promise<ReputationScore | null> {
-  try {
-    const contract = new ethers.Contract(
-      REPUTATION_REGISTRY_ADDRESS,
-      REPUTATION_REGISTRY_ABI,
-      provider
-    );
-
-    const score = await contract.getReputationScore(freelancerAddress);
-    
-    return {
-      overallScore: score.overallScore,
-      completedProjects: score.completedProjects,
-      totalEarnings: score.totalEarnings,
-      averageRating: score.averageRating,
-      successRate: score.successRate,
-      responseTime: score.responseTime,
-      lastUpdated: score.lastUpdated,
-      isActive: score.isActive
-    };
-  } catch (error) {
-    console.error('Error fetching reputation score:', error);
-    return null;
-  }
-}
-
-/**
- * Get skill badges for a freelancer
- */
-export async function getSkillBadges(
-  provider: ethers.Provider,
-  freelancerAddress: string
-): Promise<SkillBadge[]> {
-  try {
-    const contract = new ethers.Contract(
-      REPUTATION_REGISTRY_ADDRESS,
-      REPUTATION_REGISTRY_ABI,
-      provider
-    );
-
-    const badgeIds = await contract.getUserBadges(freelancerAddress);
-    const badges: SkillBadge[] = [];
-
-    for (const badgeId of badgeIds) {
-      const metadata = await contract.badgeMetadata(badgeId);
-      badges.push({
-        skillName: metadata.skillName,
-        proficiencyLevel: metadata.proficiencyLevel,
-        qualityScore: metadata.qualityScore,
-        projectsCompleted: metadata.projectsCompleted,
-        mintedAt: metadata.mintedAt,
-        validator: metadata.validator,
-        pythFeedId: metadata.pythFeedId,
-        isVerified: metadata.isVerified
-      });
-    }
-
-    return badges;
-  } catch (error) {
-    console.error('Error fetching skill badges:', error);
-    return [];
-  }
-}
-
-/**
- * Record work completion (called by validator/admin when deliverable is approved)
- * This automatically updates reputation metrics
- */
-export async function recordWorkCompletion(
-  signer: ethers.Signer,
-  freelancerAddress: string,
-  clientAddress: string,
-  projectId: number,
-  paymentAmountUSD: number, // In USD (will be scaled by 1e8)
-  qualityScore: number, // 0-100
-  skillsUsed: string[],
-  deliverableIPFSHash: string
-): Promise<{ success: boolean; txHash?: string; error?: string }> {
-  try {
-    const contract = new ethers.Contract(
-      REPUTATION_REGISTRY_ADDRESS,
-      REPUTATION_REGISTRY_ABI,
-      signer
-    );
-
-    // Scale payment amount (USD to 1e8)
-    const scaledPayment = BigInt(Math.floor(paymentAmountUSD * 1e8));
-
-    // Convert IPFS hash to bytes32
-    const deliverableHash = ethers.keccak256(ethers.toUtf8Bytes(deliverableIPFSHash));
-
-    // Call contract
-    const tx = await contract.recordWorkCompletion(
-      freelancerAddress,
-      clientAddress,
-      projectId,
-      scaledPayment,
-      qualityScore,
-      skillsUsed,
-      deliverableHash
-    );
-
-    await tx.wait();
-
-    console.log('✅ Work completion recorded! Reputation updated.');
-    console.log('Transaction hash:', tx.hash);
-
-    return { success: true, txHash: tx.hash };
-  } catch (error: any) {
-    console.error('Error recording work completion:', error);
-    return { 
-      success: false, 
-      error: error.message || 'Failed to record work completion' 
-    };
-  }
-}
-
-/**
- * Initialize reputation for a new freelancer
- */
-export async function initializeReputation(
-  signer: ethers.Signer,
-  freelancerAddress: string,
-  initialSkills: string[]
-): Promise<{ success: boolean; txHash?: string; error?: string }> {
-  try {
-    const contract = new ethers.Contract(
-      REPUTATION_REGISTRY_ADDRESS,
-      REPUTATION_REGISTRY_ABI,
-      signer
-    );
-
-    const tx = await contract.initializeReputation(freelancerAddress, initialSkills);
-    await tx.wait();
-
-    console.log('✅ Reputation initialized!');
-    console.log('Transaction hash:', tx.hash);
-
-    return { success: true, txHash: tx.hash };
-  } catch (error: any) {
-    console.error('Error initializing reputation:', error);
-    return { 
-      success: false, 
-      error: error.message || 'Failed to initialize reputation' 
-    };
-  }
+export function ipfsHashToBytes32(ipfsHash: string): `0x${string}` {
+  return keccak256(toBytes(ipfsHash));
 }
 
 /**
