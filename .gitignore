@@ -1,29 +1,200 @@
-# Dependencies
-node_modules/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
+# ============================================
+# ReputeFlow - Comprehensive .gitignore
+# ============================================
 
-# Environment
+# ============================================
+# CRITICAL: Environment Variables & Secrets
+# ============================================
 .env
 .env.local
 .env.*.local
+**/.env
+**/.env.local
+contracts/.env
+agents/.env
+agents/agent_fin/.env
+frontend/.env.local
 
-# Build
-artifacts/
-cache/
+# Private Keys (NEVER commit these!)
+*.key
+*.pem
+private_key*
+PRIVATE_KEY*
+
+# ============================================
+# Node.js / JavaScript / TypeScript
+# ============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Build outputs
 dist/
 build/
+out/
+.next/
+.nuxt/
+.cache/
 
-# IDE
-.vscode/
-.windsurf/
+# Dependency directories
+jspm_packages/
 
-# Logs
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# ============================================
+# Python
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# ============================================
+# Hardhat / Solidity
+# ============================================
+cache/
+artifacts/
+typechain/
+typechain-types/
+coverage/
+coverage.json
 *.log
 
-# OS
+# Hardhat files
+hardhat.config.ts.backup
+
+# ============================================
+# Frontend (Next.js / React)
+# ============================================
+.next/
+out/
+.vercel
+.turbo
+
+# Testing
+coverage/
+.nyc_output
+
+# ============================================
+# IDEs and Editors
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# ============================================
+# OS Files
+# ============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
+
+# ============================================
+# Logs
+# ============================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# ============================================
+# Temporary Files
+# ============================================
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+.tmp/
+temp/
+
+# ============================================
+# Database
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================
+# Blockchain / Web3 Specific
+# ============================================
+# Deployment artifacts (keep only in production)
+deployments/localhost/
+deployments/hardhat/
+
+# Gas reports
+gas-report.txt
+
+# Slither reports
+slither-report.json
+
+# ============================================
+# Agent Storage (uAgents)
+# ============================================
+agents/**/*.db
+agents/**/*.sqlite
+agents/**/.storage/
+agents/**/storage/
+
+# ============================================
+# Documentation Build
+# ============================================
+docs/_build/
+site/
+
+# ============================================
+# Package Manager Lock Files (Optional)
+# ============================================
+# Uncomment if you want to ignore lock files
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# ============================================
+# Custom Project Files
+# ============================================
+# Add any project-specific files here
+*.local
+.scratch/
+scratch/
+test-data/
