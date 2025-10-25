@@ -198,3 +198,17 @@ site/
 .scratch/
 scratch/
 test-data/
+.windsurf/rules/windsurf-instruction1.md
+.gitignore
+.windsurf/rules/windsurf-instruction2.md
+agents/manual_reputation_update.py
+agents/reputation_updater.py
+agents/requirements.txt
+agents/update_2_jobs.py
+agents/agent_fin/nlp_service.py
+agents/agent_fin/freelancer/tests/check_storage_imports.py
+agents/agent_fin/freelancer/tests/test_circular.py
+agents/agent_fin/freelancer/tests/test_import.py
+agents/agent_fin/freelancer/tests/test_jobdata.py
+agents/agent_fin/freelancer/tests/verify_models.py
+contracts/contracts/test/MockPyth.sol
