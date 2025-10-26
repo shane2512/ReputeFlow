@@ -673,7 +673,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 ## 📞 Contact & Support
 
 - **GitHub Issues**: [Report bugs or request features](https://github.com/yourusername/ReputeFlow/issues)
-- **Documentation**: [Full documentation](https://docs.reputeflow.io)
+- **Documentation**: [Full documentation]((https://repute-flow.vercel.app/docs))
 
 
 ---
@@ -687,6 +687,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 - [x] Yellow Network PYUSD payments
 - [x] Natural language processing
 - [x] Frontend dashboard
+- [x] Agentverse registration and discovery
 
 ### Phase 2 (Q2 2025)
 - [ ] Agentverse registration and discovery
@@ -706,8 +707,8 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 <div align="center">
 
-**Built with ❤️ by the ReputeFlow Team**
+**Built with ❤️ by the Shane**
 
-[Website](https://reputeflow.io) • [Docs](https://docs.reputeflow.io) • [Demo](https://demo.reputeflow.io)
+ • [Docs](https://repute-flow.vercel.app/docs) • [Demo](https://repute-flow.vercel.app/)
 
 </div>
